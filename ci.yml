@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast checks. No toolchain, no network beyond checkout - these run in a few
+  # seconds and catch most of what has actually broken this project.
+  # ---------------------------------------------------------------------------
+  host-checks:
+    name: Host checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host compile, -Wall -Wextra
+        run: |
+          cp Vulpecula/Vulpecula.ino /tmp/vulp.cpp
+          g++ -std=gnu++17 -fsyntax-only -I test/stubs /tmp/vulp.cpp -Wall -Wextra
+
+      - name: Arduino prototype injection
+        run: python3 test/arduino_prototype_check.py
+
+      - name: Screen layout
+        run: python3 test/layout_check.py
+
+      - name: Proximity gate
+        run: python3 test/extract_and_test.py
+
+      - name: Triage rules
+        run: python3 test/triage_extract_and_test.py
+
+  # ---------------------------------------------------------------------------
+  # The authoritative compile. The host job uses stub headers, so it cannot
+  # see a real Arduino core problem - and the prototype-injection bug that
+  # broke the first build was invisible to g++ entirely.
+  #
+  # This is slow (the ESP32 toolchain is a large download) so it is cached and
+  # kept in its own job rather than blocking the fast feedback above.
+  #
+  # Note: PSRAM, partition scheme and flash size are RUNTIME settings. They do
+  # not affect whether the sketch compiles, so the default FQBN is enough here.
+  # The board-details step prints the valid option keys if you want to pin them.
+  # ---------------------------------------------------------------------------
+  arduino-compile:
+    name: Compile for ESP32-C5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache the ESP32 core and libraries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino
+          key: esp32-core-3.3.11-nimble-2.2.3
+
+      - name: Install the ESP32 core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls \
+            https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli core list
+
+      - name: Install NimBLE-Arduino
+        run: |
+          arduino-cli lib install "NimBLE-Arduino"
+          arduino-cli lib list
+
+      - name: Show the board's FQBN options
+        run: arduino-cli board details --fqbn esp32:esp32:esp32c5 || true
+
+      - name: Compile Vulpecula
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32c5 \
+            --warnings more \
+            Vulpecula
+
+      - name: Compile the reference beacon
+        # Targets any ESP32; built for the classic part since that is what most
+        # people will have spare.
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32da reference_beacon || \
+          arduino-cli compile --fqbn esp32:esp32:esp32 reference_beacon
