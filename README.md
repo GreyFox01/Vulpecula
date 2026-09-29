@@ -6,10 +6,6 @@ A handheld counter-surveillance tool that looks for wireless cameras and
 microphones in a room you occupy — a hotel room, a rental, an office. Single
 `.ino`, one library dependency, receive only.
 
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
-
-> Replace `OWNER/REPO` in the badge URL once you have pushed.
-
 ---
 
 ## The idea
